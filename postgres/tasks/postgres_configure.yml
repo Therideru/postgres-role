@@ -1,0 +1,94 @@
+---
+# roles/postgres_configure/tasks/main.yml
+- name: Block Database user
+  become_user: postgres
+  become: true
+  block: 
+    - name: Create DB repmgr
+      community.postgresql.postgresql_db:
+        name: repmgr
+        comment: Replication Database
+
+    - name: Create repmgr user
+      community.postgresql.postgresql_user:
+        name: "{{ repmgr_user }}"
+        password: "{{ repmgr_password }}"
+        state: present
+        db: repmgr
+        role_attr_flags: superuser
+
+    - name: Configure PostgreSQL for replication
+      ansible.builtin.lineinfile:
+        path: "/etc/postgresql/{{ pg_version }}/main/postgresql.conf"
+        line: "{{ item }}"
+        insertafter: EOF
+        state: present
+      with_items:
+        - "listen_addresses = '{{ listen_addresses_node1 }}'"
+        - "wal_level = replica"
+        - "hot_standby = on"
+        - "max_wal_senders = 10"
+        - "max_replication_slots = 10"
+        - "archive_mode = on"
+        - "archive_command = '/bin/true'"
+        - "shared_preload_libraries = 'repmgr'"
+
+    - name: Configure pg_hba.conf for replication
+      ansible.builtin.template:
+        src: "pg_hba.conf.j2"
+        dest: "/etc/postgresql/{{ pg_version }}/main/pg_hba.conf"
+
+    - name: Reload PostgreSQL service
+      become_user: root
+      ansible.builtin.service:
+        name: postgresql
+        state: restarted
+  
+  when: "'node1' in inventory_hostname.lower()"
+
+- name: SSH Key Block
+  become_user: postgres
+  block:
+    - name: Ensure .ssh directory exists
+      ansible.builtin.file:
+        path: /var/lib/postgresql/.ssh
+        state: directory
+        mode: '0700'
+        owner: postgres
+        group: postgres
+
+    - name: Generate SSH keypair if not present
+      ansible.builtin.openssh_keypair:
+        path: /var/lib/postgresql/.ssh/id_rsa
+        type: rsa
+        size: 4096
+        force: no
+        state: present
+        comment: "{{ inventory_hostname }}"
+        passphrase: ""
+      register: ssh_key
+
+    - name: Read own public key
+      ansible.builtin.slurp:
+        src: "/var/lib/postgresql/.ssh/id_rsa.pub"
+      register: own_pubkey
+
+    - name: Add other node's public key to authorized_keys
+      ansible.builtin.authorized_key:
+        user: postgres
+        state: present
+        key: "{{ hostvars[other_node].own_pubkey.content | b64decode }}"
+      vars:
+        other_node: "{{ groups['postgres'] | difference([inventory_hostname]) | first }}"
+    
+    - name: Configure SSH to disable StrictHostKeyChecking for other node
+      ansible.builtin.blockinfile:
+        path: /var/lib/postgresql/.ssh/config
+        block: |
+          Host {{ hostvars[groups['postgres'] | difference([inventory_hostname]) | first].ansible_host }}
+              StrictHostKeyChecking no
+              UserKnownHostsFile /dev/null
+        create: yes
+        mode: '0600'
+        owner: postgres
+        group: postgres

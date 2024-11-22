@@ -1,0 +1,25 @@
+---
+- name: Install Keepalived
+  ansible.builtin.apt:
+    name: keepalived
+    state: present
+
+- name: Configure Keepalived on primary node
+  ansible.builtin.template:
+    src: keepalived.conf.j2
+    dest: "/etc/keepalived/keepalived.conf"
+  when: inventory_hostname == "postgres-node1"
+  notify: Restart Keepalived
+
+- name: Configure Keepalived on secondary node
+  ansible.builtin.template:
+    src: keepalived.conf.j2
+    dest: "/etc/keepalived/keepalived.conf"
+  when: inventory_hostname == "postgres-node2"
+  notify: Restart Keepalived
+
+- name: Enable and start Keepalived service
+  ansible.builtin.service:
+    name: keepalived
+    state: started
+    enabled: yes

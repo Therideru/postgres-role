@@ -1,0 +1,11 @@
+---
+# handlers file for ../roles/postgres
+- name: Restart PostgreSQL
+  service:
+    name: postgresql
+    state: restarted
+    
+- name: Restart Keepalived
+  ansible.builtin.service:
+    name: keepalived
+    state: restarted

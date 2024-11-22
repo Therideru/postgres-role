@@ -1,0 +1,16 @@
+node_id={{ '101' if "node1" in inventory_hostname.lower() else '201' }}
+node_name={{ inventory_hostname }}
+conninfo='host={{ '10.0.1.101' if "node1" in inventory_hostname.lower() else '10.0.1.201' }} dbname=repmgr user={{ repmgr_user }} password={{ repmgr_password }}'
+failover='{{ repmgr_failover }}'
+service_start_command='/bin/sudo /usr/bin/systemctl start postgresql'
+service_stop_command='/bin/sudo /usr/bin/systemctl stop postgresql'
+service_restart_command='/bin/sudo /usr/bin/systemctl restart postgresql'
+service_reload_command='/bin/sudo /usr/bin/systemctl reload postgresql'
+repmgrd_service_start_command='/bin/sudo /usr/bin/systemctl start repmgrd'
+repmgrd_service_stop_command='/bin/sudo /usr/bin/systemctl stop repmgrd'
+ssh_options='-q -o ConnectTimeout=10 -p 22'
+log_level='{{ repmgr_log_level }}'
+log_file='{{ repmgr_log_file }}'
+use_replication_slots=yes
+replication_user='{{ repmgr_user }}'
+data_directory='{{ repmgr_pg_datadir }}'

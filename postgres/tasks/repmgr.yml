@@ -1,0 +1,75 @@
+---
+# roles/repmgr_configure/tasks/main.yml
+- name: Configure repmgr on primary node
+  ansible.builtin.template:
+    src: repmgr.conf.j2
+    dest: "/etc/repmgr-{{ inventory_hostname }}.conf"
+
+- name: Check if postgres node2 is standby registerd
+  become_user: postgres
+  ansible.builtin.command: "repmgr cluster show -f /etc/repmgr-{{ inventory_hostname }}.conf"
+  register: primary
+  failed_when: false
+  changed_when: false
+
+- name: Stop PostgreSQL on Node2
+  ansible.builtin.service:
+    name: postgresql
+    state: stopped
+    enabled: yes
+  when: 
+    - "'node2' in inventory_hostname.lower()"  
+    - "'standby' not in primary.stdout"
+
+- name: Initialize repmgr cluster on primary node
+  become_user: postgres
+  ansible.builtin.command: "repmgr -f /etc/repmgr-{{ inventory_hostname }}.conf --verbose primary register"
+  when: 
+    - "'node1' in inventory_hostname.lower()"
+    - "'primary' not in primary.stdout"
+
+- name: Block for node2
+  become_user: postgres
+  block:
+    - name: Join secondary node to repmgr cluster
+      ansible.builtin.command: "repmgr -f /etc/repmgr-{{ inventory_hostname }}.conf --verbose standby clone -h {{ hostvars[groups['postgres'] | difference([inventory_hostname]) | first].ansible_host }} -U repmgr -d repmgr --copy-external-config-files"
+      register: clone_result
+      when: "'standby' not in primary.stdout"
+      
+    - name: Update data_directory in postgresql.conf
+      ansible.builtin.lineinfile:
+        path: /etc/postgresql/16/main/postgresql.conf
+        regexp: "{{ item.regex }}"
+        line: "{{ item.line }}"
+        state: present
+        backup: yes
+      loop: 
+        - regex: "^data_directory\\s*="
+          line: "data_directory = '{{ repmgr_pg_datadir }}'"
+        - regex: "^listen_addresses\\s*="
+          line: "listen_addresses = '{{ listen_addresses_node2 }}'"
+      when: "'standby' not in primary.stdout"
+      
+    - name: Start PostgreSQL on Node2
+      become_user: root
+      ansible.builtin.service:
+        name: postgresql
+        state: started
+        enabled: yes
+      when: "'standby' not in primary.stdout"
+
+    - name: Register Standby server
+      ansible.builtin.command: "repmgr -f /etc/repmgr-{{ inventory_hostname }}.conf --verbose standby register"
+      when: "'standby' not in primary.stdout"
+  
+  when: "'node2' in inventory_hostname.lower()"
+
+- name: Start the Repmgr config as deamon
+  become_user: postgres
+  ansible.builtin.command: "repmgrd -f /etc/repmgr-{{ inventory_hostname }}.conf -d"
+
+- name: Look if the repmgr is started
+  ansible.builtin.service:
+    name: repmgrd
+    state: started
+    enabled: yes

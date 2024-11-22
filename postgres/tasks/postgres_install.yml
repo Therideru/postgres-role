@@ -1,0 +1,20 @@
+---
+- name: Update package cache
+  ansible.builtin.apt:
+    update_cache: yes
+
+- name: Install PostgreSQL {{ pg_version }} and dependencies
+  ansible.builtin.package:
+    name:
+      - "postgresql-{{ pg_version }}"
+      - "postgresql-contrib-{{ pg_version }}"
+      - "postgresql-{{ pg_version }}-repmgr"
+      - python3-psycopg2
+    state: present
+
+- name: Enable and start PostgreSQL service
+  ansible.builtin.service:
+    name: postgresql
+    state: started
+    enabled: yes
+  when: "'node1' in inventory_hostname.lower()"

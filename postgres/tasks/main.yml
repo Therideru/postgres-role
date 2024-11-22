@@ -1,0 +1,11 @@
+- name: include postgres_install task
+  include_tasks: postgres_install.yml
+
+- name: include postgres_configure task
+  include_tasks: postgres_configure.yml
+
+- name: include repmgr task
+  include_tasks: repmgr.yml
+
+- name: include keepalived task
+  include_tasks: keepalived.yml

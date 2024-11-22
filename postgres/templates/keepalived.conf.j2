@@ -1,0 +1,31 @@
+# templates/keepalived.conf.j2
+global_defs {
+   router_id {{ inventory_hostname }}
+}
+
+vrrp_script chk_postgresql {
+    script "/usr/lib/nagios/plugins/check_postgresql.sh -H localhost -d postgres"
+    interval 2
+    weight 2
+}
+
+vrrp_instance VI_1 {
+    state {{ 'MASTER' if inventory_hostname == "postgres-node1" else 'BACKUP' }}
+    interface {{ keepalived_interface }}
+    virtual_router_id 51
+    priority {{ 100 if inventory_hostname == "postgres-node1" else 90 }}
+    advert_int 1
+
+    authentication {
+        auth_type PASS
+        auth_pass {{ keepalived_password }}
+    }
+
+    virtual_ipaddress {
+        {{ vip }}
+    }
+
+    track_script {
+        chk_postgresql
+    }
+}
