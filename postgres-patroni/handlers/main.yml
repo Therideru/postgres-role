@@ -1,0 +1,11 @@
+---
+# handlers file for ../roles/postgres-patroni
+- name: patroni restart
+  ansible.builtin.systemd:
+    name: patroni
+    state: restarted
+
+- name: etcd restart
+  ansible.builtin.systemd:
+    name: etcd
+    state: restarted

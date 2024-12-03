@@ -1,0 +1,30 @@
+---
+# defaults file for ../roles/postgres-patroni
+# PostgreSQL version
+postgresql_version: 16
+
+# Percona repository URL
+percona_repo_url: "https://repo.percona.com/apt"
+
+# SSL configuration
+postgres_datadir: "/var/lib/postgresql/{{ postgresql_version }}/main"
+expected_etcd_members: "{{ groups['postgres'] }}"
+postgresql_ssl: true
+ssl_cert_path: "/etc/ssl/certs/server.crt"
+ssl_key_path: "/etc/ssl/private/server.key"
+ssl_ca_path: "/etc/ssl/certs/root.crt"
+
+# Keycloak user credentials
+keycloak_user: "keycloak_user"
+keycloak_password: "YourSecurePassword"
+
+# Patroni configurations
+patroni_restapi_port: 8008
+patroni_postgresql_port: 5432
+
+# Etcd configurations
+etcd_client_port: 2379
+etcd_peer_port: 2380
+
+scope: "cluster_1"
+namespace: "postgres_lab"

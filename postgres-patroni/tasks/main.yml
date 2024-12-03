@@ -1,0 +1,10 @@
+---
+# tasks file for ../roles/postgres-patroni
+- name: Include installation tasks
+  ansible.builtin.include_tasks: install.yml
+
+- name: Include etcd configuration tasks
+  ansible.builtin.include_tasks: configure_etcd.yml
+
+- name: Include Patroni configuration tasks
+  ansible.builtin.include_tasks: configure_patroni.yml

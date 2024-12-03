@@ -1,0 +1,62 @@
+---
+- name: Set DNS settings using resolvectl if systemd-resolved is active
+  block:
+    - name: Set DNS server
+      ansible.builtin.command: resolvectl dns enp7s0 10.0.1.1
+
+    - name: Set DNS search domain
+      ansible.builtin.command: resolvectl domain enp7s0 {{ dns_domain }}
+
+- name: Add Percona repository GPG key
+  ansible.builtin.get_url:
+    url: "https://repo.percona.com/apt/percona-release_latest.{{ ansible_lsb.codename }}_all.deb"
+    dest: "/tmp/"
+
+- name: Add Percona repository
+  ansible.builtin.apt:
+    deb: "/tmp/percona-release_latest.{{ ansible_lsb.codename }}_all.deb"
+    state: present
+
+- name: Update apt cache
+  ansible.builtin.apt:
+    update_cache: yes
+
+- name: Percona Setup
+  ansible.builtin.command: "percona-release setup ppg-{{ postgresql_version }}"
+
+- name: Install Percona PostgreSQL packages
+  ansible.builtin.apt:
+    name:
+      - "percona-postgresql-{{ postgresql_version }}"
+      - percona-patroni
+      - percona-pgbackrest
+    state: present
+
+- name: Install etcd
+  ansible.builtin.apt:
+    name: 
+      - etcd
+      - etcd-server 
+      - etcd-client
+    state: present
+
+- name: Install additional packages
+  ansible.builtin.apt:
+    name:
+      - python3-psycopg2
+      - python3-pip
+    state: present
+
+- name: stopp all installed services
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    state: stopped
+  loop:
+    - postgresql
+    - etcd
+    - patroni
+
+- name: remove postgresql Data dir
+  ansible.builtin.file:
+    path: "{{ postgres_datadir }}"
+    state: absent

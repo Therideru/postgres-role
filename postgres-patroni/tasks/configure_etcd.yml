@@ -1,0 +1,26 @@
+---
+- name: Create etcd data directory
+  ansible.builtin.file:
+    path: /var/lib/etcd
+    state: directory
+    owner: etcd
+    group: etcd
+    mode: '0755'
+
+- name: Create etcd configuration file
+  ansible.builtin.template:
+    src: etcd.j2
+    dest: /etc/etcd/etcd.conf.yaml
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Reload systemd daemon for etcd
+  ansible.builtin.systemd:
+    daemon_reload: yes
+
+- name: Enable and start etcd service
+  ansible.builtin.systemd:
+    name: etcd
+    state: started
+    enabled: yes

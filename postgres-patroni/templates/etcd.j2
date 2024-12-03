@@ -1,0 +1,12 @@
+name: {{ inventory_hostname }}
+data-dir: /var/lib/etcd
+initial-advertise-peer-urls: http://{{ ansible_host }}:{{ etcd_peer_port }}
+listen-peer-urls: http://{{ ansible_host }}:{{ etcd_peer_port }}
+advertise-client-urls: http://{{ ansible_host }}:{{ etcd_client_port }}
+listen-client-urls: http://{{ ansible_host }}:{{ etcd_client_port }},http://127.0.0.1:{{ etcd_client_port }}
+initial-cluster: {% for host in groups['postgres'] %}{{ host }}=http://{{ hostvars[host]['ansible_host'] }}:{{ etcd_peer_port }}{% if not loop.last %},{% endif %}{% endfor %}
+
+initial-cluster-state: new
+initial-cluster-token: etcd-cluster-01
+heartbeat-interval: 100
+election-timeout: 1000

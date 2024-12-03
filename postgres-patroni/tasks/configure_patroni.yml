@@ -1,0 +1,65 @@
+- name: Create Patroni configuration directory
+  ansible.builtin.file:
+    path: /etc/patroni
+    state: directory
+    owner: postgres
+    group: postgres
+    mode: '0755'
+
+- name: Generate Patroni configuration file
+  ansible.builtin.template:
+    src: patroni.j2
+    dest: /etc/patroni/patroni.yml
+    owner: postgres
+    group: postgres
+    mode: '0644'
+
+- name: Create systemd service for Patroni
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/patroni.service
+    content: |
+      [Unit]
+      Description=Patroni PostgreSQL HA Cluster
+      After=network.target
+
+      [Service]
+      Type=simple
+      User=postgres
+      Group=postgres
+      ExecStart=/usr/bin/patroni /etc/patroni/patroni.yml
+      Restart=on-failure
+      RestartSec=5ss
+
+      [Install]
+      WantedBy=multi-user.target
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Reload systemd daemon for Patroni
+  ansible.builtin.systemd:
+    daemon_reload: yes
+
+- name: node1 patroni start
+  block:
+    - name: Enable and start Patroni service
+      ansible.builtin.systemd:
+        name: patroni
+        state: started
+        enabled: yes
+
+    - name: Wait up to 20 seconds for Patroni to start
+      wait_for:
+        host: "{{ ansible_host }}"
+        port: 8008  # Replace with your Patroni API port
+        delay: 10
+        timeout: 300  # Maximum time to wait
+        
+  when: "'node1' in inventory_hostname.lower()" 
+
+- name: start all the other nodes for patroni
+  ansible.builtin.systemd:
+    name: patroni
+    state: started
+    enabled: yes
+  when: "'node1' not in inventory_hostname.lower()"

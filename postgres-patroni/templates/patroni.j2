@@ -1,0 +1,73 @@
+scope: {{ scope }}
+namespace: {{ namespace }}
+name: {{ inventory_hostname }}
+
+restapi:
+  listen: {{ ansible_host }}:{{ patroni_restapi_port }}
+  connect_address: {{ ansible_host }}:{{ patroni_restapi_port }}
+
+etcd3:
+  hosts: {% for host in groups['postgres'] %}{{ hostvars[host]['ansible_host'] }}:{{ etcd_client_port }}{% if not loop.last %},{% endif %}{% endfor %}
+
+bootstrap:
+  dcs:
+    ttl: 30
+    loop_wait: 10
+    retry_timeout: 10
+    maximum_lag_on_failover: 1048576
+
+    postgresql:
+      use_pg_rewind: true
+      use_slots: true
+      parameters:
+          wal_level: replica
+          hot_standby: "on"
+          wal_keep_size: '128MB'
+          max_wal_senders: 10
+          max_replication_slots: 10
+          wal_log_hints: "on"
+          logging_collector: 'on'
+          max_wal_size: '10GB'
+          archive_mode: "on"
+          archive_timeout: 600s
+          archive_command: "cp -f %p /home/postgres/archived/%f"
+        
+  initdb:
+    - encoding: UTF8
+    - data-checksums
+
+  pg_hba: # Add following lines to pg_hba.conf after running 'initdb'
+      - host replication replicator 127.0.0.1/32 trust
+      - host replication replicator 0.0.0.0/0 scram-sha-256
+      - host all all 0.0.0.0/0 scram-sha-256
+      - host all all ::0/0 scram-sha-256
+
+postgresql:
+  listen: 0.0.0.0:{{ patroni_postgresql_port }}
+  connect_address: {{ ansible_host }}:{{ patroni_postgresql_port }}
+  data_dir: {{ postgres_datadir }}
+  bin_dir: /usr/lib/postgresql/{{ postgresql_version }}/bin
+  pgpass: /tmp/pgpass0
+  authentication:
+    replication:
+      username: replicator
+      password: replicator_password
+    superuser:
+      username: postgres
+      password: postgres_password
+    rewind:
+      username: rewind_user
+      password: rewind_password
+
+  parameters:
+        unix_socket_directories: "/var/run/postgresql/"
+  create_replica_methods:
+      - basebackup
+  basebackup:
+      checkpoint: 'fast'
+
+tags:
+    nofailover: false
+    noloadbalance: false
+    clonefrom: false
+    nosync: false
