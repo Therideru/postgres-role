@@ -7,7 +7,12 @@ restapi:
   connect_address: {{ ansible_host }}:{{ patroni_restapi_port }}
 
 etcd3:
-  hosts: {% for host in groups['postgres'] %}{{ hostvars[host]['ansible_host'] }}:{{ etcd_client_port }}{% if not loop.last %},{% endif %}{% endfor %}
+  hosts: 127.0.0.1:{{ etcd_client_port }},{% for host in groups['postgres'] %}{{ hostvars[host]['ansible_host'] }}:{{ etcd_client_port }}{% if not loop.last %},{% endif %}{% endfor %}
+  
+  protocol: https
+  cacert: /usr/local/share/ca-certificates/etcd-cluster-ca_etcd.crt
+  cert: {{ certs_dir }}/etcd-client.crt
+  key: {{ key_dir }}/etcd-client.key
 
 bootstrap:
   dcs:

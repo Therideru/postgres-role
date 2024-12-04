@@ -1,4 +1,46 @@
 ---
+- name: Ensure proper permissions on folders
+  file:
+    path: "{{ item.path }}"
+    owner: etcd
+    group: postgres
+    mode: "{{ item.mode }}"
+  loop:
+    - path: "{{ key_dir }}"
+      mode: '0750'
+    - path: "{{ certs_dir }}"
+      mode: '0755'
+
+- name: Find all files in the directory
+  ansible.builtin.find:
+    paths: "{{ key_dir }}"
+    file_type: file
+    recurse: no  # Set to 'yes' if you want to include subdirectories
+  register: found_files_key
+
+- name: Find all files in the directory
+  ansible.builtin.find:
+    paths: "{{ certs_dir }}"
+    file_type: file
+    recurse: no  # Set to 'yes' if you want to include subdirectories
+  register: found_files_certs
+
+- name: Change permissions on all files found
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    owner: etcd
+    group: postgres
+    mode: '0640'  # Replace with the desired permissions
+  loop: "{{ found_files_key.files }}"
+
+- name: Change permissions on all files found
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    owner: etcd
+    group: postgres
+    mode: '0644'  # Replace with the desired permissions
+  loop: "{{ found_files_certs.files }}"
+
 - name: Create etcd data directory
   ansible.builtin.file:
     path: /var/lib/etcd

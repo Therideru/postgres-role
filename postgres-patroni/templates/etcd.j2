@@ -1,12 +1,20 @@
 name: {{ inventory_hostname }}
 data-dir: /var/lib/etcd
-initial-advertise-peer-urls: http://{{ ansible_host }}:{{ etcd_peer_port }}
-listen-peer-urls: http://{{ ansible_host }}:{{ etcd_peer_port }}
-advertise-client-urls: http://{{ ansible_host }}:{{ etcd_client_port }}
-listen-client-urls: http://{{ ansible_host }}:{{ etcd_client_port }},http://127.0.0.1:{{ etcd_client_port }}
-initial-cluster: {% for host in groups['postgres'] %}{{ host }}=http://{{ hostvars[host]['ansible_host'] }}:{{ etcd_peer_port }}{% if not loop.last %},{% endif %}{% endfor %}
+initial-advertise-peer-urls: https://{{ ansible_host }}:{{ etcd_peer_port }}
+listen-peer-urls: https://{{ ansible_host }}:{{ etcd_peer_port }}
+advertise-client-urls: https://{{ ansible_host }}:{{ etcd_client_port }}
+listen-client-urls: https://{{ ansible_host }}:{{ etcd_client_port }},https://127.0.0.1:{{ etcd_client_port }}
+initial-cluster: {% for host in groups['postgres'] %}{{ host }}=https://{{ hostvars[host]['ansible_host'] }}:{{ etcd_peer_port }}{% if not loop.last %},{% endif %}{% endfor %}
 
 initial-cluster-state: new
 initial-cluster-token: etcd-cluster-01
 heartbeat-interval: 100
 election-timeout: 1000
+client-transport-security:
+    trusted-ca-file: /usr/local/share/ca-certificates/etcd-cluster-ca_etcd.crt
+    cert-file: {{ certs_dir }}/etcd-server.crt 
+    key-file: {{ key_dir }}/etcd-server.key
+peer-transport-security:
+    trusted-ca-file: /usr/local/share/ca-certificates/etcd-cluster-ca_etcd.crt
+    cert-file: {{ certs_dir }}/etcd-member-{{ inventory_hostname }}.crt
+    key-file: {{ key_dir }}/etcd-member-{{ inventory_hostname }}.key

@@ -1,0 +1,27 @@
+---
+s3_ca_bucket: "your-first-s3-bucket"       # Name of the CA S3 bucket
+s3_certs_bucket: "your-s3-bucket"  # Name of the Certs S3 bucket
+s3_endpoint: "the-endpoint-s3"  # Custom S3 endpoint
+aws_access_key: "your-access-key"
+aws_secret_key: "your-secrect-key"
+
+# Mount Points
+s3_ca_mount_point: "/mnt/ca_s3_bucket"
+s3_certs_mount_point: "/mnt/certs_s3_bucket"
+
+# Certificate Directories
+ca_dir: "{{ s3_ca_mount_point }}/ca"
+key_dir: "{{ s3_certs_mount_point }}/key"
+certs_dir: "{{ s3_certs_mount_point }}/certs"
+
+# Certificate Details
+country_name: "DE"
+state_or_province_name: "Berlin"
+organization_name: "your-organisation"
+
+# s3fs-fuse Options
+s3fs_opts: "allow_other,use_path_request_style,url=https://{{ s3_endpoint }},passwd_file=/root/.passwd-s3fs"
+domain_name: "your_domain_name"
+
+key_type: "ECC"
+key_curve: "secp521r1"

@@ -1,0 +1,229 @@
+---
+- name: Collect IP addresses of all hosts in the group
+  set_fact:
+    ip_list: "{{ play_hosts | map('extract', hostvars, 'ansible_host') | list + ['127.0.0.1'] }}"
+  
+- name: Set SAN
+  set_fact:
+    subject_alt_name: "{{ ip_list | map('regex_replace', '^', 'IP:') | join(',') }}"
+
+- name: Set DNS Entries
+  set_fact:
+    dns_entries: 
+      - "{{ inventory_hostname }}"
+      - "{{ inventory_hostname }}.local"
+
+- name: Set member SAN
+  set_fact:
+    san_member: "{{ ((dns_entries | map('regex_replace', '^', 'DNS:') | list) + (ip_list | map('regex_replace', '^', 'IP:') | list)) | join(',') }}"
+
+- name: Install necessary packages
+  ansible.builtin.apt:
+    name:
+      - s3fs
+      - openssl
+      - ca-certificates
+    state: present
+    update_cache: yes
+  
+- name: Create s3fs password file
+  ansible.builtin.copy:
+    dest: /root/.passwd-s3fs
+    content: "{{ aws_access_key }}:{{ aws_secret_key }}"
+    mode: '0600'
+  
+- name: Ensure mount points exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0755'
+  loop:
+    - "{{ s3_ca_mount_point }}"
+    - "{{ s3_certs_mount_point }}"
+  
+- name: Mount S3 bucket for CA
+  ansible.builtin.mount:
+    path: "{{ s3_ca_mount_point }}"
+    src: "{{ s3_ca_bucket }}"
+    fstype: "fuse.s3fs"
+    opts: "{{ s3fs_opts }}"
+    state: mounted
+  
+- name: Mount S3 bucket for Certs
+  ansible.builtin.mount:
+    path: "{{ s3_certs_mount_point }}"
+    src: "{{ s3_certs_bucket }}"
+    fstype: "fuse.s3fs"
+    opts: "{{ s3fs_opts }}"
+    state: mounted
+  
+- name: Ensure CA directory exists
+  ansible.builtin.file:
+    path: "{{ ca_dir }}"
+    state: directory
+    mode: '0700'
+- name: Block for CA generation
+  block:
+    - name: Check if CA key exists
+      ansible.builtin.stat:
+        path: "{{ ca_dir }}/ca_etcd.key"
+      register: ca_key_exists
+      
+    - name: Create CA private key
+      openssl_privatekey:
+        path: "{{ ca_dir }}/ca_etcd.key"
+        type: "{{ key_type }}"
+        size: 4096
+      when: not ca_key_exists.stat.exists
+      
+    - name: Check if CA certificate exists
+      ansible.builtin.stat:
+        path: "{{ ca_dir }}/ca_etcd.crt"
+      register: ca_cert_exists
+      
+    - name: CA CSR generation
+      community.crypto.openssl_csr_pipe:
+        privatekey_path: "{{ ca_dir }}/ca_etcd.key"
+        country_name: "{{ country_name }}"
+        organization_name: "{{ organization_name }}"
+        common_name: "Etcd Cluster CA"
+        basic_constraints:
+          - "CA:TRUE"
+        key_usage:
+          - keyCertSign
+          - cRLSign
+      register: csr_result
+
+    - name: Create CA certificate
+      community.crypto.x509_certificate:
+        path: "{{ ca_dir }}/ca_etcd.crt"
+        privatekey_path: "{{ ca_dir }}/ca_etcd.key"
+        csr_content: "{{ csr_result.csr }}"
+        provider: selfsigned
+      when: not ca_cert_exists.stat.exists
+  when: "'node1' in inventory_hostname.lower()"
+
+- name: Wait for CA cert to be available
+  ansible.builtin.pause:
+    seconds: 5
+
+- name: Shell for chdir
+  ansible.builtin.shell: /usr/bin/ls "{{ ca_dir }}"
+  args:
+    executable: /bin/bash
+    chdir: "{{ ca_dir }}"
+
+- name: Copy CA certificate to system CA trust store
+  ansible.builtin.copy:
+    src: "{{ ca_dir }}/ca_etcd.crt"
+    dest: "/usr/local/share/ca-certificates/etcd-cluster-ca_etcd.crt"
+    mode: '0644'
+    remote_src: true
+  
+- name: Update CA certificates
+  ansible.builtin.shell: "update-ca-certificates"
+
+- name: Ensure etcd key directory exists
+  ansible.builtin.file:
+    path: "{{ key_dir }}"
+    state: directory
+    mode: '0700'
+  
+- name: Ensure etcd cert directory exists
+  ansible.builtin.file:
+    path: "{{ certs_dir }}"
+    state: directory
+    mode: '0755'
+  
+- name: Generate private key for etcd
+  openssl_privatekey:
+    path: "{{ key_dir }}/etcd-server.key"
+    type: "{{ key_type }}"
+    size: 4096
+  
+- name: Generate CSR for etcd
+  community.crypto.openssl_csr_pipe:
+    privatekey_path: "{{ key_dir }}/etcd-server.key"
+    common_name: "{{ domain_name }}"
+    country_name: "{{ country_name }}"
+    state_or_province_name: "{{ state_or_province_name }}"
+    organization_name: "{{ organization_name }}"
+    subject_alt_name: "{{ subject_alt_name }}"
+    extended_key_usage:
+      - serverAuth
+  register: etcd_result
+  
+- name: Sign certificate with CA
+  community.crypto.x509_certificate:
+    path: "{{ certs_dir }}/etcd-server.crt"
+    csr_content: "{{ etcd_result.csr }}"
+    privatekey_path: "{{ key_dir }}/etcd-server.key"
+    provider: ownca
+    ownca_path: "{{ ca_dir }}/ca_etcd.crt"
+    ownca_privatekey_path: "{{ ca_dir }}/ca_etcd.key"
+  
+- name: Generate private key for etcd-member
+  openssl_privatekey:
+    path: "{{ key_dir }}/etcd-member-{{ inventory_hostname }}.key"
+    type: "{{ key_type }}"
+    size: 4096
+  
+- name: Generate CSR for etcd-member
+  community.crypto.openssl_csr_pipe:
+    privatekey_path: "{{ key_dir }}/etcd-member-{{ inventory_hostname }}.key"
+    common_name: "{{ domain_name }}"
+    country_name: "{{ country_name }}"
+    state_or_province_name: "{{ state_or_province_name }}"
+    organization_name: "{{ organization_name }}"
+    subject_alt_name: "{{ san_member }}"
+    extended_key_usage:
+      - serverAuth
+      - clientAuth
+  register: etcd_result_member
+  
+- name: Sign certificate with CA
+  community.crypto.x509_certificate:
+    path: "{{ certs_dir }}/etcd-member-{{ inventory_hostname }}.crt"
+    csr_content: "{{ etcd_result_member.csr }}"
+    privatekey_path: "{{ key_dir }}/etcd-member-{{ inventory_hostname }}.key"
+    provider: ownca
+    ownca_path: "{{ ca_dir }}/ca_etcd.crt"
+    ownca_privatekey_path: "{{ ca_dir }}/ca_etcd.key"
+
+- name: Generate private key for etcd-client
+  openssl_privatekey:
+    path: "{{ key_dir }}/etcd-client.key"
+    type: "{{ key_type }}"
+    size: 4096
+  
+- name: Generate CSR for etcd-client
+  community.crypto.openssl_csr_pipe:
+    privatekey_path: "{{ key_dir }}/etcd-client.key"
+    common_name: "client"
+    country_name: "{{ country_name }}"
+    state_or_province_name: "{{ state_or_province_name }}"
+    organization_name: "{{ organization_name }}"
+    subject_alt_name: "{{ subject_alt_name }}"
+    extended_key_usage:
+      - clientAuth
+  register: etcd_result_member
+  
+- name: Sign certificate with CA
+  community.crypto.x509_certificate:
+    path: "{{ certs_dir }}/etcd-client.crt"
+    csr_content: "{{ etcd_result_member.csr }}"
+    privatekey_path: "{{ key_dir }}/etcd-client.key"
+    provider: ownca
+    ownca_path: "{{ ca_dir }}/ca_etcd.crt"
+    ownca_privatekey_path: "{{ ca_dir }}/ca_etcd.key"
+  
+- name: Unmount S3 bucket for CA
+  mount:
+    path: "{{ s3_ca_mount_point }}"
+    state: unmounted
+  
+- name: Remove s3fs password file
+  file:
+    path: /root/.passwd-s3fs
+    state: absent
+  
