@@ -11,10 +11,11 @@ initial-cluster-token: etcd-cluster-01
 heartbeat-interval: 100
 election-timeout: 1000
 client-transport-security:
-    trusted-ca-file: /usr/local/share/ca-certificates/etcd-cluster-ca_etcd.crt
+    trusted-ca-file: /etc/ssl/certs/ca-certificates.crt
     cert-file: {{ certs_dir }}/etcd-server.crt 
     key-file: {{ key_dir }}/etcd-server.key
+    client-cert-auth: false
 peer-transport-security:
-    trusted-ca-file: /usr/local/share/ca-certificates/etcd-cluster-ca_etcd.crt
+    trusted-ca-file: /etc/ssl/certs/ca-certificates.crt
     cert-file: {{ certs_dir }}/etcd-member-{{ inventory_hostname }}.crt
     key-file: {{ key_dir }}/etcd-member-{{ inventory_hostname }}.key

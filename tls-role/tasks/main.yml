@@ -72,7 +72,7 @@
     - name: Create CA private key
       openssl_privatekey:
         path: "{{ ca_dir }}/ca_etcd.key"
-        type: "{{ key_type }}"
+        type: "RSA"
         size: 4096
       when: not ca_key_exists.stat.exists
       
@@ -87,8 +87,12 @@
         country_name: "{{ country_name }}"
         organization_name: "{{ organization_name }}"
         common_name: "Etcd Cluster CA"
+        key_usage_critical: true
+        basic_constraints_critical: true
+        use_common_name_for_san: false
         basic_constraints:
           - "CA:TRUE"
+          - "pathlen:2"
         key_usage:
           - keyCertSign
           - cRLSign
@@ -101,6 +105,100 @@
         csr_content: "{{ csr_result.csr }}"
         provider: selfsigned
       when: not ca_cert_exists.stat.exists
+
+    - name: Ensure etcd key directory exists
+      ansible.builtin.file:
+        path: "{{ key_dir }}"
+        state: directory
+        mode: '0700'
+      
+    - name: Ensure etcd cert directory exists
+      ansible.builtin.file:
+        path: "{{ certs_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: Check if CA key exists
+      ansible.builtin.stat:
+        path: "{{ ca_dir }}/etcd-server.key"
+      register: etc_server_exists
+          
+    - name: Generate private key for etcd
+      openssl_privatekey:
+        path: "{{ key_dir }}/etcd-server.key"
+        type: "{{ key_type }}"
+        curve: "{{ key_curve }}"
+      when: not etc_server_exists.stat.exists
+      
+    - name: Generate CSR for etcd
+      community.crypto.openssl_csr_pipe:
+        privatekey_path: "{{ key_dir }}/etcd-server.key"
+        common_name: "{{ domain_name }}"
+        country_name: "{{ country_name }}"
+        state_or_province_name: "{{ state_or_province_name }}"
+        organization_name: "{{ organization_name }}"
+        subject_alt_name: "{{ subject_alt_name }}"
+        extended_key_usage:
+          - serverAuth
+        key_usage_critical: true
+        basic_constraints_critical: true
+        basic_constraints:
+          - "CA:FALSE"
+        key_usage:
+          - "digitalSignature"
+          - "keyEncipherment"
+        
+      register: etcd_result
+      
+    - name: Sign certificate with CA
+      community.crypto.x509_certificate:
+        path: "{{ certs_dir }}/etcd-server.crt"
+        csr_content: "{{ etcd_result.csr }}"
+        privatekey_path: "{{ key_dir }}/etcd-server.key"
+        provider: ownca
+        ownca_path: "{{ ca_dir }}/ca_etcd.crt"
+        ownca_privatekey_path: "{{ ca_dir }}/ca_etcd.key"
+
+    - name: Check if etcd-client key exists
+      ansible.builtin.stat:
+        path: "{{ ca_dir }}/etcd-client.key"
+      register: etc_client_exists
+
+    - name: Generate private key for etcd-client
+      openssl_privatekey:
+        path: "{{ key_dir }}/etcd-client.key"
+        type: "{{ key_type }}"
+        curve: "{{ key_curve }}"
+      when: not etc_client_exists.stat.exists
+      
+    - name: Generate CSR for etcd-client
+      community.crypto.openssl_csr_pipe:
+        privatekey_path: "{{ key_dir }}/etcd-client.key"
+        common_name: "{{ domain_name }}"
+        country_name: "{{ country_name }}"
+        state_or_province_name: "{{ state_or_province_name }}"
+        organization_name: "{{ organization_name }}"
+        use_common_name_for_san: false
+        extended_key_usage:
+          - clientAuth
+        key_usage_critical: true
+        basic_constraints_critical: true
+        basic_constraints:
+          - "CA:FALSE"
+        key_usage:
+          - "digitalSignature"
+          - "keyEncipherment"
+      register: etcd_result_member
+      
+    - name: Sign certificate with CA
+      community.crypto.x509_certificate:
+        path: "{{ certs_dir }}/etcd-client.crt"
+        csr_content: "{{ etcd_result_member.csr }}"
+        privatekey_path: "{{ key_dir }}/etcd-client.key"
+        provider: ownca
+        ownca_path: "{{ ca_dir }}/ca_etcd.crt"
+        ownca_privatekey_path: "{{ ca_dir }}/ca_etcd.key"
+
   when: "'node1' in inventory_hostname.lower()"
 
 - name: Wait for CA cert to be available
@@ -122,51 +220,18 @@
   
 - name: Update CA certificates
   ansible.builtin.shell: "update-ca-certificates"
+  
+- name: Check if etcd-client key exists
+  ansible.builtin.stat:
+    path: "{{ ca_dir }}/etcd-member-{{ inventory_hostname }}.key"
+  register: etc_member_exists
 
-- name: Ensure etcd key directory exists
-  ansible.builtin.file:
-    path: "{{ key_dir }}"
-    state: directory
-    mode: '0700'
-  
-- name: Ensure etcd cert directory exists
-  ansible.builtin.file:
-    path: "{{ certs_dir }}"
-    state: directory
-    mode: '0755'
-  
-- name: Generate private key for etcd
-  openssl_privatekey:
-    path: "{{ key_dir }}/etcd-server.key"
-    type: "{{ key_type }}"
-    size: 4096
-  
-- name: Generate CSR for etcd
-  community.crypto.openssl_csr_pipe:
-    privatekey_path: "{{ key_dir }}/etcd-server.key"
-    common_name: "{{ domain_name }}"
-    country_name: "{{ country_name }}"
-    state_or_province_name: "{{ state_or_province_name }}"
-    organization_name: "{{ organization_name }}"
-    subject_alt_name: "{{ subject_alt_name }}"
-    extended_key_usage:
-      - serverAuth
-  register: etcd_result
-  
-- name: Sign certificate with CA
-  community.crypto.x509_certificate:
-    path: "{{ certs_dir }}/etcd-server.crt"
-    csr_content: "{{ etcd_result.csr }}"
-    privatekey_path: "{{ key_dir }}/etcd-server.key"
-    provider: ownca
-    ownca_path: "{{ ca_dir }}/ca_etcd.crt"
-    ownca_privatekey_path: "{{ ca_dir }}/ca_etcd.key"
-  
 - name: Generate private key for etcd-member
   openssl_privatekey:
     path: "{{ key_dir }}/etcd-member-{{ inventory_hostname }}.key"
     type: "{{ key_type }}"
-    size: 4096
+    curve: "{{ key_curve }}"
+  when: not etc_member_exists.stat.exists
   
 - name: Generate CSR for etcd-member
   community.crypto.openssl_csr_pipe:
@@ -179,6 +244,13 @@
     extended_key_usage:
       - serverAuth
       - clientAuth
+    key_usage_critical: true
+    basic_constraints_critical: true
+    basic_constraints:
+      - "CA:FALSE"
+    key_usage:
+      - "digitalSignature"
+      - "keyEncipherment"
   register: etcd_result_member
   
 - name: Sign certificate with CA
@@ -186,33 +258,6 @@
     path: "{{ certs_dir }}/etcd-member-{{ inventory_hostname }}.crt"
     csr_content: "{{ etcd_result_member.csr }}"
     privatekey_path: "{{ key_dir }}/etcd-member-{{ inventory_hostname }}.key"
-    provider: ownca
-    ownca_path: "{{ ca_dir }}/ca_etcd.crt"
-    ownca_privatekey_path: "{{ ca_dir }}/ca_etcd.key"
-
-- name: Generate private key for etcd-client
-  openssl_privatekey:
-    path: "{{ key_dir }}/etcd-client.key"
-    type: "{{ key_type }}"
-    size: 4096
-  
-- name: Generate CSR for etcd-client
-  community.crypto.openssl_csr_pipe:
-    privatekey_path: "{{ key_dir }}/etcd-client.key"
-    common_name: "client"
-    country_name: "{{ country_name }}"
-    state_or_province_name: "{{ state_or_province_name }}"
-    organization_name: "{{ organization_name }}"
-    subject_alt_name: "{{ subject_alt_name }}"
-    extended_key_usage:
-      - clientAuth
-  register: etcd_result_member
-  
-- name: Sign certificate with CA
-  community.crypto.x509_certificate:
-    path: "{{ certs_dir }}/etcd-client.crt"
-    csr_content: "{{ etcd_result_member.csr }}"
-    privatekey_path: "{{ key_dir }}/etcd-client.key"
     provider: ownca
     ownca_path: "{{ ca_dir }}/ca_etcd.crt"
     ownca_privatekey_path: "{{ ca_dir }}/ca_etcd.key"
