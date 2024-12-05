@@ -28,3 +28,19 @@ etcd_peer_port: 2380
 
 scope: "cluster_1"
 namespace: "postgres_lab"
+
+dns_domain: "your-domain"
+s3_ca_mount_point: "/mnt/ca_s3_bucket"
+s3_certs_mount_point: "/mnt/certs_s3_bucket"
+ca_dir: "{{ s3_ca_mount_point }}/ca"
+key_dir: "{{ s3_certs_mount_point }}/key"
+certs_dir: "{{ s3_certs_mount_point }}/certs"
+s3_ca_bucket: "cacert"       # Name of the CA S3 bucket
+s3_certs_bucket: "keycloak"  # Name of the Certs S3 bucket
+s3_endpoint: "your-s3-endpoint"  # Custom S3 endpoint
+aws_access_key: "your-s3-access-key"
+aws_secret_key: "your-s3-secret-key"
+organization_name: "OG name"
+domain_name: "domain-name"
+key_type: "ECC"
+key_curve: "secp256r1"
