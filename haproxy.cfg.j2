@@ -1,0 +1,50 @@
+frontend keycloak_frontend
+    # Bind to port 80 (HTTP) and 443 (HTTPS)
+    bind *:80
+    bind *:443 ssl crt /etc/haproxy/conf.d/haproxy.pem
+    mode http
+    option httplog
+    option forwardfor
+    option http-server-close
+    timeout client 30s
+
+    # Capture headers for logging/debugging
+    capture request header Host len 32
+    capture request header X-Forwarded-For len 32
+
+    # Redirect HTTP (port 80) to HTTPS (port 443)
+    redirect scheme https code 301 if !{ ssl_fc }
+
+    # Set Keycloak-specific headers
+    http-request set-header X-Forwarded-Proto https if { ssl_fc }
+    http-request set-header X-Forwarded-Proto http if !{ ssl_fc }
+    http-request set-header X-Forwarded-Port 443 if { ssl_fc }
+    http-request set-header X-Forwarded-Port 80 if !{ ssl_fc }
+
+    # Default backend
+    default_backend keycloak_backend
+
+# Backend configuration
+backend keycloak_backend
+    mode http
+    balance roundrobin
+    timeout connect 5s
+    timeout server 30s
+
+    # Sticky sessions using AUTH_SESSION_ID cookie
+    cookie KC_ROUTE insert indirect nocache secure
+
+    # Health check on port 9000 using /health endpoint
+    option httpchk GET /health
+    http-check connect port 9000 ssl
+    http-check send meth GET uri /health
+    http-check expect status 200
+
+    # Define the two Keycloak nodes, traffic to 8443 with SSL and no verification
+    server node1 10.0.1.11:8443 ssl verify none check cookie node1
+    server node2 10.0.1.12:8443 ssl verify none check cookie node2
+
+    # Forward headers to Keycloak
+    option forwardfor
+    http-request set-header X-Real-IP %[src]
+    http-response set-header X-Backend-Server %[srv_id]
