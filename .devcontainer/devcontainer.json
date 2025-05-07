@@ -1,0 +1,46 @@
+{
+    "name": "AlmaLinux Dev Container",
+    "build": {
+      "dockerfile": "Dockerfile"
+    },
+    "remoteUser": "vscode",
+    
+    "mounts": [
+      "source=devcontainer-home,target=/home/vscode,type=volume",
+      "source=devcontainer-repos,target=/home/vscode/repos,type=volume"
+    ],
+
+    "workspaceFolder": "/home/vscode/repos",
+
+    "customizations": {
+      "vscode": {
+          "extensions": [
+              "eamodio.gitlens",          
+              "redhat.ansible",       
+              "redhat.vscode-yaml",      
+              "wholroyd.jinja",        
+              "hashicorp.hcl",
+              "hashicorp.terraform"   
+            ]
+      },
+      "settings": {
+        // Turn on ansible-lint and make it run on save
+        "terminal.integrated.defaultProfile.linux": "/bin/zsh",
+        "editor.formatOnSave": true,
+        "ansibleLint.enabled": true,
+        // Treat all .yml/.yaml as Ansible so lint always applies
+        "files.associations": {
+          "*.yml": "ansible",
+          "*.yaml": "ansible"
+          },
+        "files.autoSave": "afterDelay",
+        "files.autoSaveDelay": 0
+        },
+      "containerEnv": {
+        "PATH": "${HOME}/bin:${HOME}/.local/bin:/usr/local/bin:${PATH}"
+      },
+      "remoteEnv": {
+        "PATH": "${HOME}/bin:${HOME}/.local/bin:/usr/local/bin:${containerEnv:PATH}"
+      }
+    }
+}
